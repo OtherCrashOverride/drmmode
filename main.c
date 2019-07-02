@@ -8,8 +8,54 @@
 #include <xf86drm.h>
 #include <xf86drmMode.h>
 
+#include <errno.h>
+#include <string.h>
+
 
 const char* DEVICE_NAME = "/dev/dri/card0";
+
+
+void print_properties(int fd, drmModeObjectPropertiesPtr props)
+{
+	//drmModePropertyPtr p;
+	//unsigned int i, prop_id = 0; /* Property ID should always be > 0 */
+    printf("\tProperties (%d):\n", props->count_props);
+
+	for (uint32_t i = 0; i < props->count_props; i++)
+    {
+		drmModePropertyPtr p = drmModeGetProperty(fd, props->props[i]);
+		// if (!strcmp(p->name, name)){
+		// 	prop_id = p->prop_id;
+		// 	break;
+		// }
+        if (strcmp(p->name, "type") == 0)
+        {
+            // for (uint32_t j = 0; j < p->count_enums; ++j)
+            // {
+            //     printf("\t\t'%s'= [%s]0x%llx\n", p->name, p->enums[j].name, p->enums[j].value);
+            // }
+
+            uint64_t val = props->prop_values[i];
+            printf("\t\t'%s'=0x%lx [%s]\n", p->name, val, p->enums[val].name);
+        }
+        else
+        {        
+            printf("\t\t'%s'=0x%lx\n", p->name, props->prop_values[i]);
+        }
+
+		drmModeFreeProperty(p);
+	}
+
+	// if (!prop_id) {
+	// 	printf("Could not find %s property\n", name);
+	// 	return(-1);
+	// }
+
+	// drmModeFreeProperty(p);
+	// *p_val = props->prop_values[i];
+	// return 0;
+}
+
 
 int main()
 {
@@ -40,12 +86,12 @@ int main()
         abort();
     }
 
-    // io = drmSetClientCap(fd, DRM_CLIENT_CAP_ATOMIC, 1);
-    // if (io < 0)
-    // {
-    //     printf("DRM_CLIENT_CAP_ATOMIC failed.\n");
-    //     abort();
-    // }
+    io = drmSetClientCap(fd, DRM_CLIENT_CAP_ATOMIC, 1);
+    if (io < 0)
+    {
+        printf("DRM_CLIENT_CAP_ATOMIC failed.\n");
+        abort();
+    }
 
 
     // Connector
@@ -76,6 +122,7 @@ int main()
         for (int mode_id = 0; mode_id < mode_count; ++mode_id)
         {
             drmModeModeInfo mode_info = connector->modes[mode_id];
+
 #if 0
             typedef struct _drmModeModeInfo {
             uint32_t clock;
@@ -139,6 +186,83 @@ int main()
 
     // result = connectorPtr->count_modes;
     // libdrm.drmModeFreeConnector(connectorPtr);
+
+    drmModePlaneRes* plane_res = drmModeGetPlaneResources(fd);
+
+	if (!plane_res) {
+		printf("drmModeGetPlaneResources failed: %s\n", strerror(errno));		
+		abort();
+	}
+
+	/*
+	 * find the plane connected to crtc_id (the primary plane) and then find the desired pixel format
+	 * from the plane format list
+	 */
+	for (uint32_t i = 0; i < plane_res->count_planes; i++)
+	{
+		drmModePlane *plane = drmModeGetPlane(fd, plane_res->planes[i]);
+		//drmModeObjectProperties *props;
+		//unsigned int plane_type;
+
+		if(plane == NULL)
+			continue;
+
+		drmModeObjectProperties* props = drmModeObjectGetProperties(fd, plane->plane_id, DRM_MODE_OBJECT_PLANE);
+
+		if(props == NULL){
+			printf("plane (%d) properties not found\n",  plane->plane_id);
+			drmModeFreePlane(plane);
+			continue;
+		}
+
+		// if(get_drm_prop_val(fd, props, "type",  &plane_type) < 0)
+		// {
+		// 	printf("plane (%d) type value not found\n",  plane->plane_id);
+		// 	drmModeFreeObjectProperties(props);
+		// 	drmModeFreePlane(plane);
+		// 	continue;
+		// }
+
+		// if (plane_type != DRM_PLANE_TYPE_PRIMARY)
+		// {
+		// 	drmModeFreeObjectProperties(props);
+		// 	drmModeFreePlane(plane);
+		// 	continue;
+		// }
+		// else if (!plane->crtc_id)
+		// {
+		// 	plane->crtc_id = drm.crtc_id[drm.ndisp];
+		// }
+
+        printf("Plane[%d] plane_id=%d, crtc_id=%d\n", i, plane->plane_id, plane->crtc_id);
+        print_properties(fd, props);
+
+		drmModeFreeObjectProperties(props);
+
+		//if (plane->crtc_id == drm.crtc_id[drm.ndisp])
+		{
+            printf("\tFormats (%d):\n", plane->count_formats);
+
+			for (uint32_t j = 0; j < plane->count_formats; j++)
+			{
+				// if (search_plane_format(drm_formats[k], plane->count_formats, plane->formats))
+				// {
+				// 	drm.format[drm.ndisp] = drm_formats[k];
+				// 	drmModeFreePlane(plane);
+				// 	drmModeFreePlaneResources(plane_res);
+				// 	drmSetClientCap(drm.fd, DRM_CLIENT_CAP_UNIVERSAL_PLANES, 0);
+				// 	return true;
+				// }
+
+                printf("\t\tFormat=%c%c%c%c\n", plane->formats[j] & 0xff, plane->formats[j] >> 8 & 0xff, plane->formats[j] >> 16 & 0xff, plane->formats[j] >> 24);
+			}
+		}
+
+		drmModeFreePlane(plane);
+	}
+
+	drmModeFreePlaneResources(plane_res);
+
 
     return 0;
 
